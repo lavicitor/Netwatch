@@ -7,7 +7,7 @@
 # "Setup order" section. Kalpa doesn't ship `make` by default, and there's
 # no reason to require it just for the host side of this.
 
-.PHONY: run build tidy
+.PHONY: run build test tidy
 
 tidy:
 	go mod tidy
@@ -17,3 +17,6 @@ run:
 
 build:
 	go build -o bin/netwatch ./cmd/netwatch
+
+test:
+	go test ./...
