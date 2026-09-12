@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Netwatch</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Netwatch</h1>
+    <form id="scan-form">
+      <input id="target" type="text" placeholder="target CIDR, e.g. 10.89.0.0/24" />
+      <button type="submit">Scan</button>
+      <span id="status" class="status">idle</span>
+    </form>
+  </header>
+
+  <main id="subnets">
+    <p class="empty">No results yet -- start a scan.</p>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "name": "Netwatch",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  // Both host-gateway aliases so the app reaches a Postgres published on
+  // the host regardless of whether this runs under Docker (which expects
+  // host.docker.internal) or Podman (host.containers.internal) -- both
+  // support the "host-gateway" magic value the same way. --name is fixed
+  // so the scan-network commands in the README have a stable target.
+  // --env-file loads .env into the container -- copy .env.example to .env
+  // before first build (see README); changing .env afterwards needs a
+  // container rebuild (not just a restart) to pick up the new values.
+  "runArgs": [
+    "--name", "Devcontainer-Netwatch",
+    "--add-host=host.docker.internal:host-gateway",
+    "--add-host=host.containers.internal:host-gateway",
+    "--env-file", "${localWorkspaceFolder}/.env"
+  ],
+  "forwardPorts": [8080],
+  "postCreateCommand": "go mod tidy",
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": ["golang.go"]
+    }
+  }
+}

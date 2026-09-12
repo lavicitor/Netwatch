@@ -1,0 +1,49 @@
+# Fake "devices" for Netwatch to scan during development/demos.
+# Entirely independent of the app/devcontainer -- Netwatch runs fine with
+# this stack up, down, or never started at all.
+#
+# Usage (run these from your HOST terminal, not the devcontainer's --
+# podman-compose isn't installed inside it, and attaching a *running*
+# container to a network is a host-level operation either way):
+#
+#   podman-compose -f deploy/scan-network/compose.yml up -d
+#   podman network connect scan-net Devcontainer-Netwatch
+#   ... scan 10.89.0.0/24 from inside VS Code ...
+#   podman network disconnect scan-net Devcontainer-Netwatch   # optional
+#   podman-compose -f deploy/scan-network/compose.yml down
+#
+# (substitute `docker compose` / `docker network connect` if you're on
+# Docker instead of Podman -- same commands, same idea)
+
+networks:
+  scan-net:
+    name: scan-net
+    ipam:
+      config:
+        - subnet: 10.89.0.0/24
+
+services:
+  web1:
+    image: docker.io/library/nginx:alpine
+    networks: [scan-net]
+
+  cache1:
+    image: docker.io/library/redis:alpine
+    networks: [scan-net]
+
+  db-decoy:
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: demo
+    networks: [scan-net]
+
+  oddball:
+    # A device with a couple of nonstandard open ports, so the demo isn't
+    # just "the usual suspects" (80/6379/5432).
+    image: docker.io/library/alpine:latest
+    command: >
+      sh -c "apk add --no-cache socat >/dev/null &&
+             socat TCP-LISTEN:9999,fork,reuseaddr /dev/null &
+             socat TCP-LISTEN:31337,fork,reuseaddr /dev/null &
+             wait"
+    networks: [scan-net]

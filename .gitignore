@@ -1,0 +1,16 @@
+# Go
+/bin/
+*.exe
+*.test
+*.out
+
+# Env / secrets
+.env
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+
+# Devcontainer local overrides
+.devcontainer/.env
