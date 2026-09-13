@@ -20,6 +20,13 @@
     <p class="empty">No results yet -- start a scan.</p>
   </main>
 
+  <!-- Hidden until /api/health confirms a database: with none configured
+       no scan events are ever written, so the panel would stay empty. -->
+  <section id="changes" class="changes" hidden>
+    <h2>Recent changes</h2>
+    <ul id="changes-list"></ul>
+  </section>
+
   <script src="app.js"></script>
 </body>
 </html>

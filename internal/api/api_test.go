@@ -96,6 +96,23 @@ func TestHandleHealth(t *testing.T) {
 	}
 }
 
+// Scan events live only in the database, so a DB-less server serves the
+// feed as an empty JSON array -- the GUI hides the panel in that case, but
+// the endpoint must not fail or answer "null" if something asks anyway.
+func TestHandleListEventsWithoutStore(t *testing.T) {
+	s := newTestServer(t)
+
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/events", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if body := strings.TrimSpace(rec.Body.String()); body != "[]" {
+		t.Errorf("body = %q, want an empty JSON array", body)
+	}
+}
+
 func TestHandleStartScan(t *testing.T) {
 	tests := []struct {
 		name       string

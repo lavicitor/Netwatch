@@ -6,6 +6,7 @@
   --muted: #8b949e;
   --accent: #4fd1c5;
   --port-open: #3fb950;
+  --port-closed: #f85149;
 }
 
 * { box-sizing: border-box; }
@@ -111,3 +112,38 @@ main {
   padding: 0.1rem 0.55rem;
   font-size: 0.78rem;
 }
+
+/* Recent changes: a compact feed of what the last scans turned up,
+   sitting below the results rather than competing with them. */
+.changes {
+  margin: 0 1.5rem 1.5rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+}
+
+.changes h2 {
+  font-size: 0.9rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.6rem;
+}
+
+.changes ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.change {
+  font-size: 0.85rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--muted);
+}
+
+.change.opened { border-left-color: var(--port-open); }
+.change.closed { border-left-color: var(--port-closed); }

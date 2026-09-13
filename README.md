@@ -8,7 +8,7 @@ network or a port opens/closes since the last scan.
 ## Architecture
 
 - `cmd/netwatch` -- entrypoint: wires config, store, scanner, and the HTTP server together.
-- `internal/scanner` -- concurrent host/port discovery. Not yet implemented (see Status below).
+- `internal/scanner` -- concurrent host/port discovery over a bounded worker pool.
 - `internal/store` -- Postgres persistence via `pgx`, migrations embedded and applied automatically via `goose` on startup. Entirely optional -- see below.
 - `internal/api` -- REST endpoints + a Server-Sent Events stream (`/api/stream`) for pushing live results to the GUI, plus serves `web/static`.
 - `internal/model` -- shared types.
@@ -54,10 +54,34 @@ same way whether or not you ever touch it.
 
 ## Status
 
-Scaffolding (config, storage/migrations, HTTP routing, GUI shell,
-devcontainer, scan-network) works end to end. Not yet implemented:
+Complete. Config, storage and migrations, the scanner, the REST API and
+live stream, the GUI, the devcontainer, and the demo scan-network all work
+end to end.
 
 - [x] `Scanner.Scan` in `internal/scanner/scanner.go` -- the actual concurrent host/port discovery
 - [x] Broadcast hub wiring `/api/scan` -> `/api/stream` in `internal/api/api.go`
-- [ ] `store.Store` read/write methods, including new-device/port-change diffing
-- [ ] `/api/hosts` in-memory fallback when no database is configured
+- [x] `store.Store` read/write methods, including new-device/port-change diffing
+- [x] `/api/hosts` in-memory fallback when no database is configured
+
+With a database configured, each scan writes a `scans` row, upserts the
+hosts and ports it found, and records a `scan_events` row for every new
+host and every port that opened or closed since the last scan that saw
+that host. `/api/hosts` then serves the persisted state, falling back to
+the last scan's in-memory results if the read fails. Writes are
+best-effort throughout: a database error is logged and the scan carries
+on, same as a failed connection at startup.
+
+One deliberate gap: `scan_events` also allows a `host_gone` event type,
+which nothing writes yet. Unlike the other three it can't be derived from
+a single host's result -- it needs a query for the hosts previously seen
+on a target that the current scan did *not* find, run once at the end of a
+scan. See the comment on `RecordEvent` in `internal/store/store.go`.
+
+## Tests
+
+`make test` (or `go test ./...`) passes without any database. The
+`internal/store` tests need a real Postgres and skip themselves when there
+isn't one; to run them, point `NETWATCH_TEST_DSN` or the
+`NETWATCH_TEST_DB_*` variables at a throwaway database -- they truncate
+its tables. The details are in a comment at the top of
+`internal/store/store_test.go`.

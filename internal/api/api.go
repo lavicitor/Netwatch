@@ -53,6 +53,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("POST /api/scan", s.handleStartScan)
 	mux.HandleFunc("GET /api/hosts", s.handleListHosts)
+	mux.HandleFunc("GET /api/events", s.handleListEvents)
 	mux.HandleFunc("GET /api/stream", s.handleStream) // SSE: live results
 	mux.Handle("/", http.FileServer(http.Dir("web/static")))
 
@@ -102,24 +103,32 @@ func (s *Server) handleStartScan(w http.ResponseWriter, r *http.Request) {
 // stream and to the in-memory buffer as it arrives.
 func (s *Server) runScan(ctx context.Context, target string) {
 	seq := s.beginScan()
+	scanID, persist := s.beginPersistedScan(ctx, target)
 
 	results := make(chan model.Host)
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.scanner.Scan(ctx, target, results) }()
 
 	count := 0
+	openPorts := 0
 	for host := range results {
 		count++
+		openPorts += len(host.Ports)
 		s.recordHost(seq, host)
 		s.hub.broadcast(event{host: host})
 
-		// Persistence goes here once internal/store grows a write method
-		// (see the TODO at the bottom of internal/store/store.go). Until
-		// then results are in-memory only, even with a store configured.
+		if persist {
+			s.persistHost(ctx, scanID, host)
+		}
 	}
 
 	if err := <-errCh; err != nil {
 		s.logger.Error("scan failed", "target", target, "err", err)
+	}
+	if persist {
+		if err := s.store.FinishScan(ctx, scanID, count, openPorts); err != nil {
+			s.logger.Error("recording scan end failed", "scan_id", scanID, "err", err)
+		}
 	}
 
 	// The GUI closes its EventSource on this event; without it the stream
@@ -129,12 +138,97 @@ func (s *Server) runScan(ctx context.Context, target string) {
 }
 
 func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
-	// With a store configured this should prefer persisted history, which
-	// survives restarts and covers more than the last scan. internal/store
-	// has no read method yet, so for now both modes serve the same
-	// in-memory results -- DB-less mode still shows live results, it just
-	// won't have history across runs.
+	// With a store configured, persisted state is the better answer: it
+	// survives restarts and covers every host ever seen, not just the ones
+	// the most recent scan reached. The database stays best-effort though,
+	// so a read failure serves the in-memory results instead of failing
+	// the request -- DB-less mode has only ever had those anyway.
+	if s.store != nil {
+		hosts, err := s.store.ListHosts(r.Context())
+		if err == nil {
+			writeJSON(w, http.StatusOK, hosts)
+			return
+		}
+		s.logger.Error("reading hosts from the database failed, serving in-memory results", "err", err)
+	}
+
 	writeJSON(w, http.StatusOK, s.hosts())
+}
+
+// recentEventLimit caps how much of the change history /api/events serves.
+// The GUI shows a glance at what just changed, not a browsable log, so
+// this is the whole of the pagination story.
+const recentEventLimit = 50
+
+// handleListEvents serves the most recent scan events, newest first. Only
+// the store has them -- nothing equivalent is kept in memory -- so without
+// one this is an empty list rather than an error, exactly as it is when
+// the read fails: the panel it feeds sits alongside the results, and an
+// empty one is a better outcome than a failed page.
+func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
+	events := make([]store.Event, 0)
+
+	if s.store != nil {
+		recent, err := s.store.RecentEvents(r.Context(), recentEventLimit)
+		if err != nil {
+			s.logger.Error("reading recent events from the database failed, serving an empty list", "err", err)
+		} else {
+			events = recent
+		}
+	}
+
+	writeJSON(w, http.StatusOK, events)
+}
+
+// beginPersistedScan opens the scans row this run's rows hang off, and
+// reports whether persistence is on at all. Writing history is best-effort
+// everywhere in Netwatch: with no store configured, or one that fails
+// here, the scan still runs and still streams -- it just leaves no trace
+// in the database.
+func (s *Server) beginPersistedScan(ctx context.Context, target string) (scanID int64, persist bool) {
+	if s.store == nil {
+		return 0, false
+	}
+
+	scanID, err := s.store.BeginScan(ctx, target)
+	if err != nil {
+		s.logger.Error("recording scan start failed, continuing without persistence", "target", target, "err", err)
+		return 0, false
+	}
+	return scanID, true
+}
+
+// persistHost writes one host result and the events describing how it
+// changed since the last scan that saw it. Errors are logged and dropped:
+// the result is already on the live stream and in the in-memory buffer, so
+// losing its history is not worth failing a scan over.
+func (s *Server) persistHost(ctx context.Context, scanID int64, host model.Host) {
+	hostID, isNew, err := s.store.UpsertHost(ctx, host)
+	if err != nil {
+		s.logger.Error("persisting host failed", "ip", host.IP, "err", err)
+		return
+	}
+	if isNew {
+		s.recordEvent(ctx, scanID, hostID, nil, "host_new")
+	}
+
+	opened, closed, err := s.store.UpsertPorts(ctx, hostID, host.Ports)
+	if err != nil {
+		s.logger.Error("persisting ports failed", "ip", host.IP, "err", err)
+		return
+	}
+	for _, port := range opened {
+		s.recordEvent(ctx, scanID, hostID, &port.Port, "port_opened")
+	}
+	for _, port := range closed {
+		s.recordEvent(ctx, scanID, hostID, &port.Port, "port_closed")
+	}
+}
+
+func (s *Server) recordEvent(ctx context.Context, scanID, hostID int64, port *int, eventType string) {
+	if err := s.store.RecordEvent(ctx, scanID, hostID, port, eventType); err != nil {
+		s.logger.Error("recording scan event failed", "event", eventType, "host_id", hostID, "err", err)
+	}
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {

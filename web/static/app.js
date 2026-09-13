@@ -8,10 +8,20 @@ const form = document.getElementById("scan-form");
 const targetInput = document.getElementById("target");
 const statusEl = document.getElementById("status");
 const subnetsEl = document.getElementById("subnets");
+const changesEl = document.getElementById("changes");
+const changesListEl = document.getElementById("changes-list");
 
 /** @type {Map<string, any>} ip -> host */
 const hosts = new Map();
 let stream = null;
+
+// Whether the "recent changes" panel is live. Scan events only exist in
+// the database, so a DB-less run leaves this false and never fetches or
+// shows the panel at all -- better than a section that can only ever be
+// empty. /api/health settles it once, at load.
+let changesEnabled = false;
+
+initChanges();
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -49,6 +59,9 @@ function connectStream(target) {
   stream.addEventListener("done", () => {
     setStatus(`done -- ${hosts.size} host(s)`);
     stream.close();
+    // The scan's events are written as its hosts are persisted, so by the
+    // time "done" arrives they are all in the database.
+    loadChanges();
   });
 }
 
@@ -68,6 +81,69 @@ async function startScan(target) {
 
 function setStatus(text) {
   statusEl.textContent = text;
+}
+
+async function initChanges() {
+  try {
+    const res = await fetch("/api/health");
+    if (!res.ok) throw new Error(`health request failed: ${res.status}`);
+    const health = await res.json();
+    changesEnabled = Boolean(health.db);
+  } catch {
+    return; // no answer, no panel -- the scan UI works without it
+  }
+
+  if (!changesEnabled) return;
+  changesEl.hidden = false;
+  loadChanges();
+}
+
+// loadChanges refreshes the panel: once on load, then after each scan
+// finishes. Failures leave whatever is already on screen -- the feed is a
+// supplement to the results, not worth surfacing an error over.
+async function loadChanges() {
+  if (!changesEnabled) return;
+  try {
+    const res = await fetch("/api/events");
+    if (!res.ok) throw new Error(`events request failed: ${res.status}`);
+    renderChanges(await res.json());
+  } catch (err) {
+    console.warn("could not load recent changes:", err.message);
+  }
+}
+
+function renderChanges(events) {
+  changesListEl.innerHTML = "";
+
+  if (events.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = "No changes recorded yet.";
+    changesListEl.appendChild(empty);
+    return;
+  }
+
+  for (const ev of events) {
+    const item = document.createElement("li");
+    // Anything that isn't a port closing reads as an addition, which keeps
+    // an event type the GUI doesn't know about from looking like a loss.
+    item.className = ev.event_type === "port_closed" ? "change closed" : "change opened";
+    item.textContent = describeChange(ev);
+    changesListEl.appendChild(item);
+  }
+}
+
+function describeChange(ev) {
+  switch (ev.event_type) {
+    case "host_new":
+      return `${ev.host_ip} -- new host discovered`;
+    case "port_opened":
+      return `${ev.host_ip} -- port ${ev.port} opened`;
+    case "port_closed":
+      return `${ev.host_ip} -- port ${ev.port} closed`;
+    default:
+      return `${ev.host_ip} -- ${ev.event_type}`;
+  }
 }
 
 function subnetOf(ip) {
