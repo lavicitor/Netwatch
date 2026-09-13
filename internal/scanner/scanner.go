@@ -20,9 +20,14 @@ type Scanner struct {
 	Ports          []int         // ports to probe per host
 }
 
+const defaultMaxConcurrency = 64
+
 // New constructs a Scanner with sane defaults.
 func New() *Scanner {
-	return &Scanner{}
+	return &Scanner{
+		MaxConcurrency: defaultMaxConcurrency,
+		ProbeTimeout:   500 * time.Millisecond,
+	}
 }
 
 // Scan walks every host in the given CIDR (e.g. "10.89.0.0/24") and reports discovered hosts and open ports.
@@ -32,7 +37,11 @@ func (s *Scanner) Scan(ctx context.Context, cidr string, resultsCh chan<- model.
 		return err
 	}
 
-	semaphore := make(chan struct{}, s.MaxConcurrency)
+	maxConcurrency := s.MaxConcurrency
+	if maxConcurrency <= 0 {
+		maxConcurrency = defaultMaxConcurrency
+	}
+	semaphore := make(chan struct{}, maxConcurrency)
 	var wg sync.WaitGroup
 
 	for _, ip := range ips {
