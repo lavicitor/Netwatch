@@ -12,8 +12,15 @@
   // --env-file loads .env into the container -- copy .env.example to .env
   // before first build (see README); changing .env afterwards needs a
   // container rebuild (not just a restart) to pick up the new values.
+  // --network=bridge is required under rootless Podman: with no network
+  // mode specified, Podman defaults to "pasta", a point-to-point userspace
+  // network that a second network can never be attached to -- `podman
+  // network connect scan-net ...` fails against it. Bridge networking
+  // supports attaching scan-net after the fact, which is the whole point
+  // of the demo-network workflow in the README.
   "runArgs": [
     "--name", "Devcontainer-Netwatch",
+    "--network=bridge",
     "--add-host=host.docker.internal:host-gateway",
     "--add-host=host.containers.internal:host-gateway",
     "--env-file", "${localWorkspaceFolder}/.env"

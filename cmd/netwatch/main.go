@@ -36,7 +36,8 @@ func main() {
 	}
 
 	sc := scanner.New()
-	srv := api.NewServer(sc, st, logger)
+	sc.Ports = cfg.Ports
+	srv := api.NewServer(cfg, sc, st, logger)
 
 	httpServer := &http.Server{
 		Addr:    cfg.HTTPAddr,

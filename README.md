@@ -57,7 +57,7 @@ same way whether or not you ever touch it.
 Scaffolding (config, storage/migrations, HTTP routing, GUI shell,
 devcontainer, scan-network) works end to end. Not yet implemented:
 
-- [ ] `Scanner.Scan` in `internal/scanner/scanner.go` -- the actual concurrent host/port discovery
-- [ ] Broadcast hub wiring `/api/scan` -> `/api/stream` in `internal/api/api.go`
+- [x] `Scanner.Scan` in `internal/scanner/scanner.go` -- the actual concurrent host/port discovery
+- [x] Broadcast hub wiring `/api/scan` -> `/api/stream` in `internal/api/api.go`
 - [ ] `store.Store` read/write methods, including new-device/port-change diffing
 - [ ] `/api/hosts` in-memory fallback when no database is configured

@@ -4,13 +4,25 @@
 // DBConfig.Configured and internal/store.Open.
 package config
 
-import "os"
+import (
+	"os"
+	"slices"
+	"strconv"
+	"strings"
+)
 
 type Config struct {
 	DB            DBConfig
 	DefaultTarget string
 	HTTPAddr      string
+	Ports         []int // TCP ports probed on every host
 }
+
+// defaultPorts is what gets probed when NETWATCH_PORTS is unset: the usual
+// suspects, plus the two nonstandard ports the demo stack in
+// deploy/scan-network/compose.yml listens on, so a default scan of the
+// default target actually turns something up.
+var defaultPorts = []int{22, 80, 443, 3306, 5432, 6379, 8080, 9999, 31337}
 
 // DBConfig holds optional Postgres connection settings. Leave these unset
 // and Netwatch runs with in-memory results only -- that's a normal,
@@ -39,6 +51,7 @@ func Load() Config {
 		},
 		DefaultTarget: getenvDefault("NETWATCH_DEFAULT_TARGET", "10.89.0.0/24"),
 		HTTPAddr:      getenvDefault("NETWATCH_HTTP_ADDR", ":8080"),
+		Ports:         getenvPorts("NETWATCH_PORTS", defaultPorts),
 	}
 }
 
@@ -47,4 +60,27 @@ func getenvDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// getenvPorts reads a comma-separated port list, e.g. "22,80,443".
+// Unparseable or out-of-range entries are skipped rather than treated as a
+// startup error; if nothing usable is left, the defaults apply.
+func getenvPorts(key string, def []int) []int {
+	raw := os.Getenv(key)
+	if strings.TrimSpace(raw) == "" {
+		return slices.Clone(def)
+	}
+
+	var ports []int
+	for _, field := range strings.Split(raw, ",") {
+		port, err := strconv.Atoi(strings.TrimSpace(field))
+		if err != nil || port < 1 || port > 65535 {
+			continue
+		}
+		ports = append(ports, port)
+	}
+	if len(ports) == 0 {
+		return slices.Clone(def)
+	}
+	return ports
 }

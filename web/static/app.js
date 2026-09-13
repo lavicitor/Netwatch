@@ -13,30 +13,30 @@ const subnetsEl = document.getElementById("subnets");
 const hosts = new Map();
 let stream = null;
 
-form.addEventListener("submit", async (e) => {
+form.addEventListener("submit", (e) => {
   e.preventDefault();
-  const target = targetInput.value.trim();
   hosts.clear();
   render();
-  setStatus("starting scan...");
-
-  try {
-    const res = await fetch("/api/scan", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ target: target || undefined }),
-    });
-    if (!res.ok) throw new Error(`scan request failed: ${res.status}`);
-    setStatus("scanning...");
-    connectStream();
-  } catch (err) {
-    setStatus(`error: ${err.message}`);
-  }
+  setStatus("connecting...");
+  connectStream(targetInput.value.trim());
 });
 
-function connectStream() {
+// Order matters here: the stream is opened, and a scan is only started
+// once it's confirmed subscribed (via onopen), rather than the other way
+// around. /api/scan starts scanning the instant it's called -- a fast
+// scan can finish, "done" included, before a stream opened afterward
+// ever subscribes, and hub.broadcast never replays missed events to a
+// late subscriber. handleStream subscribes before writing its response
+// headers, so onopen firing is the guarantee that the subscription
+// already exists server-side.
+function connectStream(target) {
   if (stream) stream.close();
   stream = new EventSource("/api/stream");
+
+  stream.onopen = () => {
+    setStatus("scanning...");
+    startScan(target);
+  };
   stream.onmessage = (evt) => {
     const host = JSON.parse(evt.data);
     hosts.set(host.ip, host);
@@ -50,6 +50,20 @@ function connectStream() {
     setStatus(`done -- ${hosts.size} host(s)`);
     stream.close();
   });
+}
+
+async function startScan(target) {
+  try {
+    const res = await fetch("/api/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target: target || undefined }),
+    });
+    if (!res.ok) throw new Error(`scan request failed: ${res.status}`);
+  } catch (err) {
+    setStatus(`error: ${err.message}`);
+    stream.close();
+  }
 }
 
 function setStatus(text) {
